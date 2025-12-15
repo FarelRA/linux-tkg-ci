@@ -48,12 +48,12 @@ jobs:
           get_latest_kernel() {
             git -c 'versionsort.suffix=-' \
               ls-remote --exit-code --refs --sort='version:refname' --tags https://github.com/gregkh/linux.git '*.*' \
-              | cut --delimiter='/' --fields=3 | grep "$1" | tail -n 1
+              | cut --delimiter='/' --fields=3 | grep -E "^v$1\.[0-9]+$" | tail -n 1
           }
           
           LATEST=$(get_latest_kernel "${_current_kernels[0]}")
           
-          if [[ "$LATEST" =~ "rc" ]]; then
+          if [[ "$LATEST" =~ "rc" ]] || [ -z "$LATEST" ]; then
             LATEST=$(get_latest_kernel "${_current_kernels[1]}")
           fi
           
