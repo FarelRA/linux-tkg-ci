@@ -30,18 +30,21 @@ jobs:
       should_build: ${{ steps.check.outputs.should_build }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
 
-      - name: Clone linux-tkg to get supported kernels
-        run: git clone --depth 1 https://github.com/Frogging-Family/linux-tkg.git tkg
+      - uses: actions/checkout@v6
+        with:
+          repository: Frogging-Family/linux-tkg
+          path: tkg
+          fetch-depth: 1
 
       - name: Check latest kernel version
         id: check
         run: |
-          # Get supported kernel versions from linux-tkg
           grep "_current_kernels=(" tkg/linux-tkg-config/prepare > current_kernels.txt
           source current_kernels.txt
           
-          # Get latest kernel tag from gregkh/linux (same as linux-tkg does)
           get_latest_kernel() {
             git -c 'versionsort.suffix=-' \
               ls-remote --exit-code --refs --sort='version:refname' --tags https://github.com/gregkh/linux.git '*.*' \
@@ -50,7 +53,6 @@ jobs:
           
           LATEST=$(get_latest_kernel "${_current_kernels[0]}")
           
-          # Skip RC versions
           if [[ "$LATEST" =~ "rc" ]]; then
             LATEST=$(get_latest_kernel "${_current_kernels[1]}")
           fi
@@ -97,6 +99,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
 
       - name: Install repo tools
         run: |
