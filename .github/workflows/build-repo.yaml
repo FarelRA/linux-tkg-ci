@@ -2,7 +2,7 @@ name: Build Repository
 
 on:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 */12 * * *'
   workflow_dispatch:
     inputs:
       force_build:
@@ -31,10 +31,30 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Clone linux-tkg to get supported kernels
+        run: git clone --depth 1 https://github.com/Frogging-Family/linux-tkg.git tkg
+
       - name: Check latest kernel version
         id: check
         run: |
-          LATEST=$(curl -s https://www.kernel.org/releases.json | jq -r '.latest_stable.version')
+          # Get supported kernel versions from linux-tkg
+          grep "_current_kernels=(" tkg/linux-tkg-config/prepare > current_kernels.txt
+          source current_kernels.txt
+          
+          # Get latest kernel tag from gregkh/linux (same as linux-tkg does)
+          get_latest_kernel() {
+            git -c 'versionsort.suffix=-' \
+              ls-remote --exit-code --refs --sort='version:refname' --tags https://github.com/gregkh/linux.git '*.*' \
+              | cut --delimiter='/' --fields=3 | grep "$1" | tail -n 1
+          }
+          
+          LATEST=$(get_latest_kernel "${_current_kernels[0]}")
+          
+          # Skip RC versions
+          if [[ "$LATEST" =~ "rc" ]]; then
+            LATEST=$(get_latest_kernel "${_current_kernels[1]}")
+          fi
+          
           echo "Latest kernel: $LATEST"
           
           CURRENT=""
