@@ -38,7 +38,7 @@ jobs:
             archlinux:latest \
             bash -c '
               set -ex
-              pacman -Syu --noconfirm base-devel git bc cpio dwarves libelf perl python openssl
+              pacman -Syu --noconfirm base-devel git bc cpio pahole libelf perl python openssl
               
               if [ "$BUILD_ARCH" = "aarch64" ]; then
                 pacman -S --noconfirm aarch64-linux-gnu-gcc
