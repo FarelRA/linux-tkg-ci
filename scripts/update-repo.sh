@@ -18,11 +18,12 @@ for arch in x86_64 aarch64; do
     dest="$STAGING/arch/$arch"
     count=0
     
-    for pkg in packages/arch-${arch}-*/*.pkg.tar.zst 2>/dev/null; do
-        [ -f "$pkg" ] || continue
+    shopt -s nullglob
+    for pkg in packages/arch-${arch}-*/*.pkg.tar.zst; do
         cp -v "$pkg" "$dest/"
         ((count++)) || true
     done
+    shopt -u nullglob
     
     echo "Copied $count packages for arch/$arch"
     
@@ -30,7 +31,6 @@ for arch in x86_64 aarch64; do
     if [ $count -gt 0 ]; then
         (
             cd "$dest"
-            # Create desc files and tar them
             for pkg in *.pkg.tar.zst; do
                 name=$(echo "$pkg" | sed 's/-[0-9].*//')
                 mkdir -p "linux-tkg.db/$name"
@@ -48,11 +48,12 @@ done
 # === DEBIAN ===
 echo "=== Processing Debian packages ==="
 deb_count=0
-for pkg in packages/debian-*/*.deb 2>/dev/null; do
-    [ -f "$pkg" ] || continue
+shopt -s nullglob
+for pkg in packages/debian-*/*.deb; do
     cp -v "$pkg" "$STAGING/debian/pool/main/"
     ((deb_count++)) || true
 done
+shopt -u nullglob
 echo "Copied $deb_count Debian packages"
 
 if [ $deb_count -gt 0 ]; then
@@ -82,11 +83,12 @@ for arch in x86_64 aarch64; do
     dest="$STAGING/fedora/$arch"
     count=0
     
-    for pkg in packages/fedora-${arch}-*/*.rpm 2>/dev/null; do
-        [ -f "$pkg" ] || continue
+    shopt -s nullglob
+    for pkg in packages/fedora-${arch}-*/*.rpm; do
         cp -v "$pkg" "$dest/"
         ((count++)) || true
     done
+    shopt -u nullglob
     
     echo "Copied $count packages for fedora/$arch"
     
