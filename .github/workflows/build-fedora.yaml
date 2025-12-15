@@ -1,0 +1,57 @@
+name: Build Fedora
+
+on:
+  workflow_call:
+    inputs:
+      kernel_version:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        scheduler: [pds, bmq, bore, eevdf]
+        config: [default, all-patches]
+        arch: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h
+
+      - name: Build in Fedora container
+        env:
+          KERNEL_VERSION: ${{ inputs.kernel_version }}
+          SCHEDULER: ${{ matrix.scheduler }}
+          CONFIG: ${{ matrix.config }}
+          BUILD_ARCH: ${{ matrix.arch }}
+        run: |
+          docker run --rm \
+            -e KERNEL_VERSION -e SCHEDULER -e CONFIG -e BUILD_ARCH \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            fedora:latest \
+            bash -c '
+              set -ex
+              dnf install -y bc bison dwarves elfutils-libelf-devel flex gcc make \
+                ncurses-devel openssl-devel perl rpm-build rsync zstd git hostname
+              
+              if [ "$BUILD_ARCH" = "aarch64" ]; then
+                dnf install -y gcc-aarch64-linux-gnu
+              fi
+              
+              bash scripts/build-fedora.sh
+            '
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: fedora-${{ matrix.arch }}-${{ matrix.scheduler }}-${{ matrix.config }}
+          path: output/*.rpm
+          retention-days: 1
+          if-no-files-found: warn

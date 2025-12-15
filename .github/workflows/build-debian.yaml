@@ -1,0 +1,59 @@
+name: Build Debian
+
+on:
+  workflow_call:
+    inputs:
+      kernel_version:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        scheduler: [pds, bmq, bore, eevdf]
+        config: [default, all-patches]
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h
+
+      - name: Build in Debian container
+        env:
+          KERNEL_VERSION: ${{ inputs.kernel_version }}
+          SCHEDULER: ${{ matrix.scheduler }}
+          CONFIG: ${{ matrix.config }}
+          BUILD_ARCH: ${{ matrix.arch }}
+        run: |
+          docker run --rm \
+            -e KERNEL_VERSION -e SCHEDULER -e CONFIG -e BUILD_ARCH \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            debian:bookworm \
+            bash -c '
+              set -ex
+              apt-get update
+              apt-get install -y bc bison build-essential cpio fakeroot flex git kmod \
+                libelf-dev libncurses-dev libssl-dev lz4 rsync wget zstd \
+                debhelper dwarves python3 python-is-python3
+              
+              if [ "$BUILD_ARCH" = "arm64" ]; then
+                apt-get install -y gcc-aarch64-linux-gnu
+              fi
+              
+              bash scripts/build-debian.sh
+            '
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: debian-${{ matrix.arch }}-${{ matrix.scheduler }}-${{ matrix.config }}
+          path: output/*.deb
+          retention-days: 1
+          if-no-files-found: warn

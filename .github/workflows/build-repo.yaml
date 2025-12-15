@@ -1,0 +1,122 @@
+name: Build Repository
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build even if version unchanged'
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - 'configs/**'
+      - 'scripts/**'
+      - '.github/workflows/**'
+
+permissions:
+  contents: write
+
+env:
+  FORCE_BUILD: ${{ github.event.inputs.force_build || 'false' }}
+
+jobs:
+  check-kernel:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      should_build: ${{ steps.check.outputs.should_build }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check latest kernel version
+        id: check
+        run: |
+          LATEST=$(curl -s https://www.kernel.org/releases.json | jq -r '.latest_stable.version')
+          echo "Latest kernel: $LATEST"
+          
+          CURRENT=""
+          [ -f VERSION ] && CURRENT=$(cat VERSION)
+          echo "Current version: ${CURRENT:-none}"
+          
+          if [ "$LATEST" = "$CURRENT" ] && [ "$FORCE_BUILD" != "true" ]; then
+            echo "Already built $LATEST"
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Building $LATEST"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$LATEST" >> "$GITHUB_OUTPUT"
+
+  build-arch:
+    needs: check-kernel
+    if: needs.check-kernel.outputs.should_build == 'true'
+    uses: ./.github/workflows/build-arch.yaml
+    with:
+      kernel_version: ${{ needs.check-kernel.outputs.version }}
+
+  build-debian:
+    needs: check-kernel
+    if: needs.check-kernel.outputs.should_build == 'true'
+    uses: ./.github/workflows/build-debian.yaml
+    with:
+      kernel_version: ${{ needs.check-kernel.outputs.version }}
+
+  build-fedora:
+    needs: check-kernel
+    if: needs.check-kernel.outputs.should_build == 'true'
+    uses: ./.github/workflows/build-fedora.yaml
+    with:
+      kernel_version: ${{ needs.check-kernel.outputs.version }}
+
+  update-repo:
+    needs: [check-kernel, build-arch, build-debian, build-fedora]
+    if: always() && needs.check-kernel.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install repo tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev createrepo-c zstd
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: packages
+        continue-on-error: true
+
+      - name: Debug - List artifacts
+        run: |
+          echo "=== Downloaded artifacts ==="
+          find packages -type f 2>/dev/null || echo "No packages found"
+
+      - name: Update repository
+        run: |
+          chmod +x scripts/update-repo.sh
+          ./scripts/update-repo.sh "${{ needs.check-kernel.outputs.version }}"
+
+      - name: Update VERSION
+        run: echo "${{ needs.check-kernel.outputs.version }}" > VERSION
+
+      - name: Commit VERSION to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add VERSION
+          git diff --staged --quiet || git commit -m "chore: update VERSION to ${{ needs.check-kernel.outputs.version }}"
+          git push || true
+
+      - name: Push to repo branch
+        run: |
+          cd repo-staging
+          git init --initial-branch=repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "kernel ${{ needs.check-kernel.outputs.version }}" --allow-empty
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -f origin repo
